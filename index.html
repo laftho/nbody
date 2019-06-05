@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script>
+    class VisualElement {
+        constructor(id) {
+            this.id = id;
+        }
+
+        render(context, timestamp) {
+
+        }
+    }
+
+    class Chronograph {
+        constructor(start = 0) {
+            this.reset(start);
+        }
+
+        reset(start = 0) {
+            this.start = start;
+            this.ticks = 0;
+            this.last = start;
+            this.step = 0;
+            this.timestamp = start;
+        }
+
+        tick(timestamp) {
+            this.last = this.timestamp;
+            this.timestamp = timestamp;
+            this.ticks = this.timestamp - this.start;
+            this.step = this.timestamp - this.last;
+        }
+    }
+
+    class BounceBall extends VisualElement {
+        render(context, timestamp) {
+            if (!this.start) {
+                this.start = timestamp;
+                this.y = 0;
+            }
+
+            this.ticks = timestamp - this.start;
+
+            if (this.ticks >= 10) {
+                this.start = timestamp;
+                this.y += 1;
+            }
+
+            context.translate(0, this.y);
+            context.beginPath();
+            context.arc(0, 0, 20, 0, Math.PI * 2);
+            context.fill();
+
+            if (this.y >= 200) this.start = false;
+        }
+    }
+
+    const GRAVITY = 6.6740831e-3; //6.6740831e-11;
+
+    class Celestial extends VisualElement {
+        constructor(id) {
+            super(id);
+
+            this.mass = 1;
+            // this.volume = 0;
+            // this.density = 0;
+            this.radius = 1;
+            // this.geometry = [];
+            this.velocity = { x: 0, y: 0, z: 0 };
+            this.position = { x: 0, y: 0, z: 0 };
+            this.forces = [];
+            // this.chrono = new Chronograph();
+        }
+
+        resolve(step) {
+            const accumulate = { x: 0, y: 0, z: 0 };
+
+            for(const force of this.forces) {
+                accumulate.x += force.x;
+                accumulate.y += force.y;
+                accumulate.z += force.z;
+            }
+
+            const vel = Object.assign({}, this.velocity);
+            const pos = Object.assign({}, this.position);
+
+            vel.x += step * (accumulate.x / this.mass);
+            vel.y += step * (accumulate.y / this.mass);
+            vel.z += step * (accumulate.z / this.mass);
+
+            pos.x += step * vel.x;
+            pos.y += step * vel.y;
+            pos.z += step * vel.z;
+
+            this.velocity = Object.assign({}, vel);
+            this.position = Object.assign({}, pos);
+
+            this.forces = [];
+        }
+
+        deltaTo(celestial) {
+            return {
+                x: this.position.x - celestial.position.x,
+                y: this.position.y - celestial.position.y,
+                z: this.position.z - celestial.position.z
+            };
+        }
+
+        deltaFrom(celestial) {
+            return {
+                x: celestial.position.x - this.position.x,
+                y: celestial.position.y - this.position.y,
+                z: celestial.position.z - this.position.z
+            };
+        }
+
+        distance(celestial) {
+            const delta = this.deltaTo(celestial);
+
+            return Math.sqrt(
+                delta.x * delta.x +
+                delta.y * delta.y +
+                delta.z * delta.z
+            );
+        }
+
+        gravitate(celestial) {
+            if (this.id === celestial.id) {
+                return;
+            }
+
+            if (this.mass <= 0 || celestial.mass <= 0) {
+                return;
+            }
+
+            const distance = this.distance(celestial);
+
+            if (distance <= 0) {
+                return;
+            }
+
+            const delta = this.deltaFrom(celestial);
+
+            const gravitation = GRAVITY * ((this.mass * celestial.mass) / (distance ** 2));
+
+            if (gravitation === 0) {
+                return;
+            }
+
+            const force = {
+                x: (delta.x * gravitation) / distance,
+                y: (delta.y * gravitation) / distance,
+                z: (delta.z * gravitation) / distance
+            };
+
+            if (force.x !== 0 || force.y !== 0 || force.z !== 0) {
+                this.forces.push(force);
+            }
+        }
+
+        render(context, timestamp) {
+            // this.chrono.tick(timestamp);
+
+            // this.resolve(this.chrono.step);
+
+            context.translate(this.position.x, this.position.y);
+            context.beginPath();
+            context.fillStyle = '#ffffff';
+            context.arc(0, 0, this.radius, 0, Math.PI * 2);
+            context.fill();
+        }
+    }
+    
+    class Higgs {                         // 1538018641536
+        constructor(frequency = 100, epoch = Date.now() - 100000) {
+            this.items = new Map();
+            
+            this.running = false;
+            this.timer = null;
+            this.frequency = frequency;
+            this.epoch = epoch;
+            this.chrono = new Chronograph();
+        }
+        
+        start() {
+            this.stop();
+            
+            this.running = true;
+            
+            this.chrono.reset(this.epoch);
+            
+            const self = this;
+            this.timer = setInterval(() => {
+                self.tick((new Date()).valueOf());
+            }, this.frequency);
+        }
+        
+        stop() {
+            if (this.timer) {
+                clearInterval(this.timer);
+            }
+            
+            this.running = false;
+        }
+        
+        tick(timestamp) {
+            this.chrono.tick(timestamp);
+            
+            for (const [key, item] of this.items) {
+                if (item && item.gravitate) {
+                    try {
+                        for (const [key1, item1] of this.items) {
+                            if (item1 && item1.gravitate) {
+                                try {
+                                    item.gravitate(item1);
+                                } catch(e) {
+                                    console.log(`Gravitate error between item[${key}] and item[${key1}]: ${e}`);
+                                    this.items.delete(key1);
+                                }
+                            }
+                        }
+                    } catch(e) {
+                        console.log(`Gravitate error for item[${key}]: ${e}`);
+                        this.items.delete(key);
+                    }
+                }
+            }
+            
+            for (const [key, item] of this.items) {
+                if (item && item.resolve) {
+                    item.resolve(this.chrono.step);
+                }
+            }
+        }
+    }
+
+    class Surface {
+        constructor(id) {
+            this.element = document.getElementById(id);
+            const self = this;
+            document.addEventListener("resize", () => {
+                self.resize();
+            });
+            this.resize();
+            this.context = this.element.getContext("2d");
+            // this.timer = null;
+            this.running = false;
+            this.higgs = new Higgs();
+            this.scale = 1;
+        }
+
+        resize(w, h) {
+            this.width = w || this.element.clientWidth;
+            this.height = h || this.element.clientHeight;
+
+            this.element.width = this.width;
+            this.element.height = this.height;
+
+            this.center = {
+                x: Math.floor(this.width / 2),
+                y: Math.floor(this.height / 2)
+            };
+        }
+
+        add(item) {
+            this.higgs.items.set(item.id, item);
+        }
+
+        start() {
+            this.stop();
+            // const self = this;
+            // this.timer = setInterval(() => {
+            //     self.render();
+            // }, 100);
+            this.running = true;
+            const self = this;
+            this.frameId = requestAnimationFrame((timestamp) => {
+                self.render(timestamp);
+            });
+            
+            this.higgs.start();
+        }
+
+        stop() {
+            this.higgs.stop();
+            
+            if (this.timer) {
+                clearInterval(this.timer);
+            }
+
+            this.running = false;
+            if (this.frameId) {
+                cancelAnimationFrame(this.frameId);
+                this.frameId = null;
+            }
+        }
+
+        render(timestamp) {
+            
+
+            this.context.clearRect(0, 0, this.width, this.height);
+
+            this.context.save();
+
+            this.context.translate(this.center.x, this.center.y);
+
+            this.context.scale(this.scale, this.scale);
+
+            for (const [key, item] of this.higgs.items) {
+                if (item && item.render) {
+                    try {
+                        this.context.save();
+                        item.render(this.context, timestamp);
+                        this.context.restore();
+                    } catch(e) {
+                        console.log(`Render error for item[${key}]: ${e}`);
+                        this.higgs.items.delete(key);
+                    }
+                }
+            }
+
+            this.context.restore();
+
+            const self = this;
+            this.frameId = requestAnimationFrame((timestamp) => {
+                self.render(timestamp);
+            });
+        }
+    }
+
+    function random(min, max) {
+        return Math.floor(Math.random() * ((Math.floor(max) - Math.ceil(min)) + Math.ceil(min)));
+    }
+
+    function init() {
+        const surface = new Surface("canvas");
+        surface.scale = 2e-4;
+        const ball = new BounceBall("asdf");
+
+        const sun = new Celestial("sun");
+        sun.mass = 100;
+        sun.radius = 10;
+
+        const earth = new Celestial("earth");
+        earth.position.x = 200;
+        earth.position.y = 150;
+        earth.mass = 50;
+        earth.radius = 5;
+
+        // surface.add(ball);
+
+       // surface.add(sun);
+       // surface.add(earth);
+
+        for (let i = 0; i < 1000; i++) {
+            const celestial = new Celestial(`${i}`);
+            celestial.mass = random(1e4, 1e7); // random(1e4, 1e8);
+            celestial.radius = Math.ceil(celestial.mass / 1e3) + 1;
+            celestial.position.x = random(0, 1e6) * (random(0, 10) > 5 ? -1 : 1);
+            celestial.position.y = random(0, 1e6) * (random(0, 10) > 5 ? -1 : 1);
+
+            surface.add(celestial);
+        }
+
+        surface.start();
+    }
+
+
+    // (function() { init(); })();
+</script>
+<style>
+
+html, body {
+    width: 100%;
+    height: 100%;
+
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: black;
+    display: flex;
+    flex-direction: column; 
+    justify-content: center;
+    align-items: stretch;
+    align-content: stretch;
+}
+
+#canvas {
+    width: 100%;
+    height: 100%;
+    margin: auto;
+    flex: 1;
+}
+
+</style>
+</head>
+<body onload="init()">
+
+<canvas id="canvas">
+
+</canvas>
+</body>
+</html>
